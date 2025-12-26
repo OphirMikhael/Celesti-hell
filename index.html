@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en" class="guisi-root">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Celesti-hell Skin Browser</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background: #0f0e13; color: #fff; font-family: 'Segoe UI', sans-serif; }
+
+        /* guisi-core */
+        .guisi-layout {}
+
+        .card { background: #1a1825; border: 1px solid #2a2737; transition: 0.2s; }
+        .card:hover { border-color: #783CB5; box-shadow: 0 0 15px rgba(120, 60, 181, 0.4); }
+
+        .guisi-card {}
+
+        .btn-part { background: #2a2737; border: 1px solid #3a3747; transition: 0.2s; }
+        .btn-part:hover { background: #783CB5; border-color: #9333ea; }
+
+        .guisi-btn {}
+
+        .type-free { color: #84cc16; background: rgba(132, 204, 22, 0.1); border: 1px solid rgba(132, 204, 22, 0.2); }
+        .type-paid { color: #fbbf24; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.2); }
+
+        .filter-btn.active { background: #783CB5; border-color: #783CB5; }
+
+        .spinner { border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid #783CB5; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; display: inline-block; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0f0e13; }
+        ::-webkit-scrollbar-thumb { background: #2a2737; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #783CB5; }
+    </style>
+</head>
+
+<body class="p-6 guisi-layout">
+    <div class="max-w-7xl mx-auto guisi-container">
+        <!-- Header -->
+        <div class="flex flex-col md:flex-row justify-between items-center mb-8 bg-[#1a1825] p-4 rounded-xl border border-[#2a2737] sticky top-4 z-50 shadow-2xl gap-4 guisi-header">
+            <h1 class="text-2xl font-bold flex items-center gap-3 guisi-title">
+                <i class="fas fa-meteor text-[#783CB5]"></i> Celesti-hell
+            </h1>
+
+            <div class="flex bg-[#0f0e13] p-1 rounded-lg border border-[#2a2737] guisi-filters">
+                <button onclick="filterSkins('all')" id="filter-all" class="filter-btn active px-4 py-1 rounded text-xs font-bold transition-all guisi-btn">ALL</button>
+                <button onclick="filterSkins('free')" id="filter-free" class="filter-btn px-4 py-1 rounded text-xs font-bold transition-all guisi-btn">FREE</button>
+                <button onclick="filterSkins('paid')" id="filter-paid" class="filter-btn px-4 py-1 rounded text-xs font-bold transition-all guisi-btn">PAID</button>
+            </div>
+
+            <button onclick="loadAllSkins()" class="bg-[#2a2737] hover:bg-[#3a3747] px-3 py-1 rounded text-sm guisi-btn">
+                <i class="fas fa-sync"></i> Refresh
+            </button>
+        </div>
+
+        <div id="skinGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 guisi-grid">
+            <div class="col-span-full text-center text-gray-500 py-10">Initializing...</div>
+        </div>
+    </div>
+
+    <script class="guisi-script">
+          const REPO_OWNER = 'OphirMikhael';
+        const REPO_NAME = 'Celesti-hell';
+        const PATHS = { free: 'skins/free', paid: 'skins/paid' };
+
+        let allSkinsGrouped = []; 
+        let currentFilter = 'all';
+
+        document.addEventListener('DOMContentLoaded', loadAllSkins);
+
+        async function fetchFromPath(path, type) {
+            const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}`;
+            try {
+                const response = await fetch(url);
+                if (!response.ok) return [];
+                const data = await response.json();
+                
+                // Grouping Logic
+                const groups = {};
+
+                data.forEach(file => {
+                    // Detect if it's a zip or a split part (.zip, .001, .part1, .z01, etc)
+                    const isSkinFile = /\.(zip|z\d+|part\d+|\d{3})$/i.test(file.name);
+                    if (!isSkinFile || file.type !== 'file') return;
+
+                    // Get base name: "SkinName.zip.001" -> "SkinName"
+                    // We split by the first occurrence of .zip or .part
+                    const baseName = file.name.split(/\.zip|\.part/i)[0];
+
+                    if (!groups[baseName]) {
+                        groups[baseName] = {
+                            name: baseName.replaceAll('_', ' '),
+                            category: type,
+                            parts: []
+                        };
+                    }
+                    groups[baseName].parts.push({
+                        filename: file.name,
+                        downloadUrl: file.download_url
+                    });
+                });
+
+                // Sort parts for each skin (so Part 1 is first)
+                Object.values(groups).forEach(group => {
+                    group.parts.sort((a, b) => a.filename.localeCompare(b.filename));
+                });
+
+                return Object.values(groups);
+            } catch (e) {
+                console.error(`Error fetching ${type} skins:`, e);
+                return [];
+            }
+        }
+
+        async function loadAllSkins() {
+            const grid = document.getElementById('skinGrid');
+            grid.innerHTML = '<div class="col-span-full text-center mt-10"><div class="spinner w-8 h-8 border-4"></div><p class="mt-2 text-gray-400">Loading skins...</p></div>';
+
+            const [freeSkins, paidSkins] = await Promise.all([
+                fetchFromPath(PATHS.free, 'free'),
+                fetchFromPath(PATHS.paid, 'paid')
+            ]);
+
+            allSkinsGrouped = [...freeSkins, ...paidSkins];
+            renderSkins();
+        }
+
+        function filterSkins(category) {
+            currentFilter = category;
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`filter-${category}`).classList.add('active');
+            renderSkins();
+        }
+
+        function renderSkins() {
+            const grid = document.getElementById('skinGrid');
+            grid.innerHTML = '';
+
+            const filtered = currentFilter === 'all' 
+                ? allSkinsGrouped 
+                : allSkinsGrouped.filter(s => s.category === currentFilter);
+
+            if (filtered.length === 0) {
+                grid.innerHTML = `<div class="col-span-full text-center text-gray-500 py-10">No skins found.</div>`;
+                return;
+            }
+
+            filtered.forEach(skin => {
+                const champMatch = skin.name.match(/^([A-Za-z]+)/);
+                const champClean = (champMatch ? champMatch[1] : 'unknown').toLowerCase();
+                const img = `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/assets/characters/${champClean}/skins/base/images/${champClean}_splash_tile_0.jpg`;
+
+                const badgeClass = skin.category === 'paid' ? 'type-paid' : 'type-free';
+                
+                // Generate download buttons for parts
+                let downloadHtml = '';
+                if (skin.parts.length === 1) {
+                    downloadHtml = `
+                        <a href="${skin.parts[0].downloadUrl}" class="w-full bg-[#783CB5] hover:bg-[#9333ea] text-white text-xs py-2 rounded font-bold flex items-center justify-center gap-2 transition-colors" download>
+                            <i class="fas fa-download"></i> Download Zip
+                        </a>`;
+                } else {
+                    downloadHtml = `<div class="grid grid-cols-2 gap-2">`;
+                    skin.parts.forEach((part, index) => {
+                        const partNum = index + 1;
+                        downloadHtml += `
+                            <a href="${part.downloadUrl}" class="btn-part text-white text-[10px] py-1.5 rounded font-medium flex items-center justify-center gap-1" download>
+                                <i class="fas fa-file-archive text-gray-400"></i> Part ${partNum}
+                            </a>`;
+                    });
+                    downloadHtml += `</div><p class="text-[9px] text-gray-500 mt-2 text-center">Multi-part Archive: Download all to extract</p>`;
+                }
+
+                const el = document.createElement('div');
+                el.className = 'card rounded-xl overflow-hidden relative group flex flex-col';
+                el.innerHTML = `
+                    <div class="h-40 overflow-hidden relative bg-gray-900">
+                        <img src="${img}" class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" loading="lazy" onerror="this.src='https://placehold.co/400x200?text=${skin.name}'">
+                        <span class="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded ${badgeClass}">${skin.category.toUpperCase()}</span>
+                        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-3 pt-8">
+                            <h3 class="font-bold text-white truncate text-sm">${skin.name}</h3>
+                        </div>
+                    </div>
+                    <div class="p-3 mt-auto">
+                        ${downloadHtml}
+                    </div>
+                `;
+                grid.appendChild(el);
+            });
+        }
+    </script>
+</body>
+</html>
